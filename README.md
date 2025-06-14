@@ -18,6 +18,9 @@ For in-depth derivations and explanations of model-based gradient boosting for s
 require(Matrix)
 require(mboost)
 
+source("R/Helper.R")
+source("R/SEM.R")
+
 set.seed(2222)
 
 # Simulate artificial data

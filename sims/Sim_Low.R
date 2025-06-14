@@ -3,7 +3,7 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, knitr Matrix, mboost, MASS, spdep, spatialreg, future, future.apply, progressr)
+pacman::p_load(tidyverse, knitr, Matrix, mboost, MASS, spdep, spatialreg, future, future.apply, progressr)
 
 source("R/Helper.R")
 source("R/SEM.R")
