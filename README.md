@@ -56,6 +56,7 @@ mod = gbm(Y, Z, W, M = 500, start = "ols", trace = TRUE)
 
 coef(mod$model[200], off2int = TRUE)
 
+par(mar = c(5, 4, 4, 6))  
 plot(mod$model)
 ```
 
