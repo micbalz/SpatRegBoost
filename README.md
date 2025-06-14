@@ -14,7 +14,7 @@ The repository serves as a foundation for replication.
 For in-depth derivations and explanations of model-based gradient boosting for spatial regression models with autoregressive disturbances, refer to:  
 
 ## Example 
-
+```
 require(Matrix)
 require(mboost)
 
@@ -54,7 +54,7 @@ mod = gbm(Y, Z, W, M = 500, start = "ols", trace = TRUE)
 coef(mod$model[200], off2int = TRUE)
 
 plot(mod$model)
-
+```
 
 
 
