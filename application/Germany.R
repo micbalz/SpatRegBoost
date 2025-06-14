@@ -9,7 +9,7 @@ source("R/Helper.R")
 source("R/SEM.R")
 
 
-### Load Data
+### Load Data (INKAR version 2021 (inkar_2021.csv) is freely available at https://www.inkar.de/ (DL-DE BY 2.0))
 inkar = fread("application/inkar_2021.csv")
 krs_spdf = st_read(dsn = "application/vg5000_ebenen_0101", layer = "VG5000_KRS")
 
