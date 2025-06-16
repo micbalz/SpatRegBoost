@@ -109,9 +109,12 @@ mod = GMerrorsar(Y ~ ., data = Z, listw = mat2listw(W, style = "W"), zero.policy
 gmm = c(coef(mod)[length(coef(mod))], coef(mod)[-length(coef(mod))], sqrt(mod$s2))
 names(gmm) = c("lambda", names(Z), "sigma")
 
-gbsem = gbm(Y, Z, W, M = 10000, start = "ols")
+lsgb = gbm(Y, Z, W, M = 10000, start = "ols")
 
-gmm
-gbsem
+res = data.frame(
+  Variable = names(gmm),
+  GMM = as.numeric(gmm),
+  LSGB = as.numeric(lsgb)
+)
 
-
+kable(res, digits = 10, caption = "Comparison of GMM and LSGB Coefficients")
