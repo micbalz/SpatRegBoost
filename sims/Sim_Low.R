@@ -15,7 +15,7 @@ handlers(global = TRUE)
 handlers("cli")
 
 ### Simulation Setup
-nsim = 10
+nsim = 100
 
 N = 400
 beta_t = c(1, 3.5, -2.5, rep(0,8))
