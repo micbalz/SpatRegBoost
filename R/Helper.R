@@ -195,7 +195,7 @@ gbm = function (Y, X, W, M, start = c("ols", "boost", "des"), trace = FALSE) {
   
   # (3) Compute R and omega at optimum and utilize boosting to estimate final beta
   R = diag(nrow(W)) - lambda * W
-  omega = sig2^2 * t(R) %*% R
+  omega = 1/sig2^2 * t(R) %*% R
   
   mod = glmboost(Y ~ ., data = X, family = SEM(omega), control = boost_control(trace = trace, mstop = M, nu = 0.1))
   cvr = cvrisk(mod, folds = cv(model.weights(mod), type = "subsampling"))

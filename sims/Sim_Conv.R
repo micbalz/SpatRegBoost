@@ -3,7 +3,7 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, Matrix, mboost, MASS, spdep, spatialreg)
+pacman::p_load(tidyverse, knitr, Matrix, mboost, MASS, spdep, spatialreg)
 
 source("R/Helper.R")
 source("R/SEM.R")
@@ -57,7 +57,7 @@ gbm = function (Y, X, W, M, start = c("ols", "boost", "des")) {
   
   # (3) Compute R and omega at optimum and utilize boosting to estimate final beta
   R = diag(nrow(W)) - lambda * W
-  omega = sig2^2 * t(R) %*% R
+  omega = 1/sig2^2 * t(R) %*% R
   
   mod = glmboost(Y ~ ., data = X, family = SEM(omega), control = boost_control(trace = FALSE, mstop = M, nu = 0.1))
   beta = coef(mod, off2int = TRUE)
@@ -83,7 +83,7 @@ beta_t = c(1, 3.5, -2.5, rep(0,8))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
 gamma_t = c(-4, 3, rep(0,8))
 names(gamma_t) = paste0("WX", 1:length(gamma_t))
-sigma_t = 3
+sigma_t = 1
 
 p = length(beta_t) + length(gamma_t) - 1
 p_true = sum(beta_t[-1] != 0) + sum(gamma_t != 0)
@@ -109,7 +109,7 @@ mod = GMerrorsar(Y ~ ., data = Z, listw = mat2listw(W, style = "W"), zero.policy
 gmm = c(coef(mod)[length(coef(mod))], coef(mod)[-length(coef(mod))], sqrt(mod$s2))
 names(gmm) = c("lambda", names(Z), "sigma")
 
-lsgb = gbm(Y, Z, W, M = 10000, start = "ols")
+lsgb = gbm(Y, Z, W, M = 25000, start = "ols")
 
 res = data.frame(
   Variable = names(gmm),
