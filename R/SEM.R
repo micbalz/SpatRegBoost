@@ -5,7 +5,7 @@ SEM = function(omega) {
       omega %*% (y - f)
     },
     loss = function(y, f) {
-      sum(omega %*% (y - f)^2) 
+     omega %*% (y - f)^2 
     },
     offset = weighted.mean,
     check_y = function(y) {
