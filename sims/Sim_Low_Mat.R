@@ -3,12 +3,11 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, knitr, Matrix, mboost, MASS, spdep, spatialreg, future, future.apply, progressr)
+pacman::p_load(tidyverse, sperrorest, knitr, mboost, gamboostLSS, MASS, spdep, spatialreg, future, future.apply, progressr)
 
-source("R/Helper.R")
 source("R/SEM.R")
 
-plan(multisession, workers = parallel::detectCores() - 2)  
+plan(multisession, workers = parallel::detectCores() - 1)  
 
 # At the beginning of your script
 handlers(global = TRUE)
@@ -17,7 +16,7 @@ handlers("cli")
 ### Simulation Setup
 nsim = 100
 
-N = 400
+n = 400
 lambda_t = 0
 beta_t = c(1, 3.5, -2.5, rep(0,8))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
@@ -26,31 +25,31 @@ names(gamma_t) = paste0("WX", 1:length(gamma_t))
 sigma_t = 1
 
 # Run the simulation
-run = function (N, lambda_t, beta_t, gamma_t, sigma_t, k) {
+run = function (n, lambda_t, beta_t, gamma_t, sigma_t, k) {
   p = length(beta_t) + length(gamma_t) - 1
   p_true = sum(beta_t[-1] != 0) + sum(gamma_t != 0)
   
   ### Generate adjacency matrices
-  W = network(N, k = k)
+  W = network(n, k = k)
   
   ### Generate covariates and error
-  X.train = matrix(runif(N * (p / 2), -2, 2),  nrow = N, ncol = p / 2)
+  X.train = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
   Z.train = cbind(X.train, W %*% X.train)
-  Z.train = cbind(rep(1,N), Z.train)
+  Z.train = cbind(rep(1,n), Z.train)
   Z.train = data.frame(Z.train)
   names(Z.train) = c(names(beta_t), names(gamma_t))
   
-  X.test = matrix(runif(N * (p / 2), -2, 2),  nrow = N, ncol = p / 2)
+  X.test = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
   Z.test = cbind(X.test, W %*% X.test)
-  Z.test = cbind(rep(1,N), Z.test)
+  Z.test = cbind(rep(1,n), Z.test)
   Z.test = data.frame(Z.test)
   names(Z.test) = c(names(beta_t), names(gamma_t))
   
-  eps.train = rnorm(N, mean = 0, sd = sigma_t)
-  eps.test = rnorm(N, mean = 0, sd = sigma_t)
+  eps.train = rnorm(n, mean = 0, sd = sigma_t)
+  eps.test = rnorm(n, mean = 0, sd = sigma_t)
   
-  u.train = solve(Diagonal(N) - lambda_t * W, eps.train)
-  u.test = solve(Diagonal(N) - lambda_t * W, eps.test)
+  u.train = solve(diag(n) - lambda_t * W, eps.train)
+  u.test = solve(diag(n) - lambda_t * W, eps.test)
   
   Y.train = as.matrix(Z.train) %*% c(beta_t, gamma_t) + u.train
   Y.test = as.matrix(Z.test) %*% c(beta_t, gamma_t) + u.test
@@ -60,17 +59,17 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t, k) {
   mle = c(coef(mod),sqrt(mod$s2))
   names(mle) = c("lambda", names(Z.train), "sigma")
   
-  mod = GMerrorsar(Y.train ~ ., data = Z.train, listw = mat2listw(W, style = "W"))
+  mod = GMerrorsar(Y.train ~ ., data = Z.train, listw = mat2listw(W, style = "W"), zero.policy = FALSE, legacy = TRUE)
   gmm = c(coef(mod)[length(coef(mod))], coef(mod)[-length(coef(mod))], sqrt(mod$s2))
   names(gmm) = c("lambda", names(Z.train), "sigma")
   
-  mod = gbm(Y.train, Z.train, W, M = 500, start = "ols")
+  mod = semboost(Y.train, Z.train, W, M = 500, start = "ols", type = "kfold", stabilization = "none")
   lsgb = mod$coef
   
-  mod = gbm(Y.train, Z.train, W, M = 500, start = "boost")
+  mod = semboost(Y.train, Z.train, W, M = 500, start = "boost", type = "kfold", stabilization = "none")
   gbgb = mod$coef
   
-  est = gbm(Y.train, Z.train, W, M = 500, start = "des")
+  est = semboost(Y.train, Z.train, W, M = 500, start = "des", type = "kfold", stabilization = "none")
   dsgb = est$coef
   
   ### Performance of variable selection
@@ -114,7 +113,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t, k) {
       Model = model_display_names[[name]],
       RMSE = rmse(Y.test, y_pred),
       MAE  = mae(Y.test, y_pred),
-      NLL  = nll(N, W, Y.test, as.matrix(Z_test), lambda = lambda, beta = delta, sigma = sigma2)
+      NLL  = nll(Y.test, as.matrix(Z_test), W, lambda = lambda, beta = delta, sigma = sigma2)
     )
   }, 
   names(Y.preds), Y.preds, deltas, lambdas, sigmas2, Z.tests,
@@ -125,7 +124,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t, k) {
   rownames(pred) = NULL
   
   ### Add deselection study
-  des = DeselectBoost(est$model, fam = SEM(omega = est$omega))
+  des = DeselectBoost(est$model, fam = SEM(omega = est$omega, stabilization = "none"))
   stabs = coef(des, off2int = TRUE)
   
   selectedVar = names(stabs)[!names(stabs) %in% c("lambda", "(Intercept)", "sigma")]
@@ -151,7 +150,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t, k) {
 }
 
 sims = function(K, nsim) {
-  set.seed(222)
+  set.seed(13579)
   
   result = list()
   
@@ -163,7 +162,7 @@ sims = function(K, nsim) {
     
     results_for_k = future_lapply(1:nsim, function(i) {
       
-      res = run(N, lambda_t, beta_t, gamma_t, sigma_t, k)
+      res = run(n, lambda_t, beta_t, gamma_t, sigma_t, k)
       pb(sprintf("k=%.2f, replication %d", k, i))
       res
     }, future.seed = TRUE)
@@ -366,7 +365,7 @@ ggplot(reg_long, aes(x = Variable, y = Coefficient)) +
   geom_boxplot(data = true.df, aes(x = Variable, y = value), color = "red") +
   ylab("Coefficients") +
   xlab("") +
-  facet_wrap(~ k, labeller = label_parsed, ncol = 3, nrow = 4) +
+  facet_wrap(~ k, labeller = label_parsed, ncol = 3, nrow = 2) +
   theme_bw(base_size = 15)
 
 

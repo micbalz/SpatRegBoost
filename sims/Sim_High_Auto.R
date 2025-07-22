@@ -3,12 +3,13 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, sperrorest, knitr, mboost, gamboostLSS, MASS, spdep, spatialreg, future, future.apply, progressr)
+pacman::p_load(tidyverse, sperrorest, knitr, mboost, MASS, spdep, spatialreg, future, future.apply, progressr)
 
 source("R/SEM.R")
 
 plan(multisession, workers = parallel::detectCores() - 1)  
 
+# At the beginning of your script
 handlers(global = TRUE)
 handlers("cli")
 
@@ -16,24 +17,19 @@ handlers("cli")
 nsim = 100
 
 n = 400
-beta_t = c(1, 3.5, -2.5, rep(0,8))
+beta_t = c(1, 3.5, -2.5, rep(0,398))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
-gamma_t = c(-4, 3, rep(0,8))
+gamma_t = c(-4, 3, rep(0,398))
 names(gamma_t) = paste0("WX", 1:length(gamma_t))
 sigma_t = 1
 
-### Compute spatial weight matrix
-krs = st_read(dsn = "application/vg5000_ebenen_0101", layer = "VG5000_KRS")
-inkar = st_centroid(krs)
-knn = knearneigh(inkar, k = 10)
-nb = knn2nb(knn, row.names = krs$AGS)
-listw = nb2listw(nb, style = "W")
-W = listw2mat(listw)  
-
 ### Run the simulation
-run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
+run = function (n, lambda_t, beta_t, gamma_t, sigma_t) {
   p = length(beta_t) + length(gamma_t) - 1
   p_true = sum(beta_t[-1] != 0) + sum(gamma_t != 0)
+  
+  ### Generate adjacency matrices
+  W = network(n, k = 5)
   
   ### Generate covariates and error
   X.train = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
@@ -58,21 +54,10 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   Y.test = as.matrix(Z.test) %*% c(beta_t, gamma_t) + u.test
   
   ### Run the models
-  mod = errorsarlm(Y.train ~ ., data = data.frame(X.train), listw = listw, Durbin = TRUE)
-  mle = c(coef(mod),sqrt(mod$s2))
-  names(mle) = c("lambda", names(Z.train), "sigma")
-  
-  mod = GMerrorsar(Y.train ~ ., data = Z.train, listw = listw, zero.policy = FALSE, legacy = TRUE)
-  gmm = c(coef(mod)[length(coef(mod))], coef(mod)[-length(coef(mod))], sqrt(mod$s2))
-  names(gmm) = c("lambda", names(Z.train), "sigma")
-  
-  mod = semboost(Y.train, Z.train, W, M = 500, start = "ols", type = "k-means spatial clustering", stabilization = "none", map = krs)
-  lsgb = mod$coef
-  
-  mod = semboost(Y.train, Z.train, W, M = 500, start = "boost", type = "k-means spatial clustering", stabilization = "none", map = krs)
+  mod = semboost(Y.train, Z.train, W, M = 500, start = "boost", type = "kfold", stabilization = "MAD")
   gbgb = mod$coef
   
-  est = semboost(Y.train, Z.train, W, M = 500, start = "des", type = "k-means spatial clustering", stabilization = "none", map = krs)
+  est = semboost(Y.train, Z.train, W, M = 500, start = "des", type = "kfold", stabilization = "MAD")
   dsgb = est$coef
   
   ### Performance of variable selection
@@ -91,20 +76,26 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   )
   
   ### Performance of prediction
-  models = list(mle = mle, gmm = gmm, lsgb = lsgb, gbgb = gbgb, dsgb = dsgb)
+  models = list(gbgb = gbgb, dsgb = dsgb)
   model_names = names(models)
   
+  # Extract components
   lambdas = lapply(models, function(m) m[["lambda"]])
   sigmas2 = lapply(models, function(m) m[["sigma"]]^2)
   
+  # Extract delta (excluding "lambda" and "sigma")
   deltas = lapply(models, function(m) m[setdiff(names(m), c("lambda", "sigma"))])
   
+  # Align Z.test columns to match deltas
   Z.tests = lapply(deltas, function(delta) Z.test[, names(delta), drop = FALSE])
   
+  # Compute predicted values
   Y.preds = Map(function(Z, delta) as.matrix(Z) %*% delta, Z.tests, deltas)
   
-  model_display_names = c(mle = "QML", gmm = "GMM", lsgb = "LSGB", gbgb = "GBGB", dsgb = "DSGB")
+  # Define display names (your desired labels for the models)
+  model_display_names = c(gbgb = "GBGB", dsgb = "DSGB")
   
+  # Compute metrics for each model
   pred = mapply(function(name, y_pred, delta, lambda, sigma2, Z_test) {
     list(
       Model = model_display_names[[name]],
@@ -116,11 +107,12 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   names(Y.preds), Y.preds, deltas, lambdas, sigmas2, Z.tests,
   SIMPLIFY = FALSE)
   
+  # Convert list of lists to data frame
   pred = do.call(rbind, lapply(pred, as.data.frame))
   rownames(pred) = NULL
   
   ### Add deselection study
-  des = DeselectBoost(est$model, fam = SEM(omega = est$omega, stabilization = "none"))
+  des = DeselectBoost(est$model, fam = SEM(omega = est$omega, stabilization = "MAD"))
   stabs = coef(des, off2int = TRUE)
   
   selectedVar = names(stabs)[!names(stabs) %in% c("lambda", "(Intercept)", "sigma")]
@@ -134,10 +126,7 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   )
   
   
-  list("QML" = mle,
-       "GMM" = gmm,
-       "LSGB" = lsgb,
-       "GBGB" = gbgb,
+  list("GBGB" = gbgb,
        "DSGB" = dsgb,
        regularization = metrics,
        regularization_stabs = metrics_stabs,
@@ -145,10 +134,8 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   
 }
 
-#12345678
-
 sims = function(lambda_values, nsim) {
-  set.seed(12345678)
+  set.seed(9631)
   
   result = list()
   
@@ -160,7 +147,7 @@ sims = function(lambda_values, nsim) {
     
     results_for_lambda = future_lapply(1:nsim, function(i) {
       
-      res = run(n, W, lambda, beta_t, gamma_t, sigma_t)
+      res = run(n, lambda, beta_t, gamma_t, sigma_t)
       pb(sprintf("lambda=%.2f, replication %d", lambda, i))
       res
     }, future.seed = TRUE)
@@ -170,35 +157,47 @@ sims = function(lambda_values, nsim) {
   return(result)
 }
 
+# Run for multiple lambdas
 lambda_values = c(-0.8, -0.6, -0.4, -0.2, 0.2, 0.4, 0.6, 0.8)
 results = sims(lambda_values, nsim)
 
 ### Evaluate variable selection
+# Suppose your results list is named results_by_lambda
 reg_means = lapply(results, function(sim_list) {
+  # Extract regularization metrics for each simulation run within this lambda
   reg_matrix = do.call(rbind, lapply(sim_list, function(sim) sim$regularization))
+  # Compute column means * 100 (if you want percentages), ignoring NA
   colMeans(reg_matrix * 100, na.rm = TRUE)
 })
 
+# Convert to data frame for nicer output
 reg_means = do.call(rbind, reg_means)
 reg_means = data.frame(lambda = rownames(reg_means), reg_means, row.names = NULL)
 reg_means$lambda = as.numeric(sub("lambda=", "", reg_means$lambda))
 
+# Suppose your results list is named results_by_lambda
 reg_stabs = lapply(results, function(sim_list) {
+  # Extract regularization metrics for each simulation run within this lambda
   reg_matrix = do.call(rbind, lapply(sim_list, function(sim) sim$regularization_stabs))
+  # Compute column means * 100 (if you want percentages), ignoring NA
   colMeans(reg_matrix * 100, na.rm = TRUE)
 })
 
+# Convert to data frame for nicer output
 reg_stabs = do.call(rbind, reg_stabs)
 reg_stabs = data.frame(lambda = rownames(reg_stabs), reg_stabs, row.names = NULL)
 reg_stabs$lambda = as.numeric(sub("lambda=", "", reg_stabs$lambda))
 
 
 ### Evaluate prediction
+# Step 1: Loop over each rho-level
 pred_means = lapply(names(results), function(lambda_name) {
+  # Get all prediction data frames for this rho
   pred_df = do.call(rbind, lapply(results[[lambda_name]], function(res) res$prediction))
   
+  # Add the model as a factor and compute mean metrics
   pred_summary = pred_df %>%
-    mutate(Model = factor(Model, levels = c("QML", "GMM", "LSGB", "GBGB", "DSGB")),
+    mutate(Model = factor(Model, levels = c("GBGB", "DSGB")),
            lambda = sub("lambda=", "", lambda_name)) %>%
     group_by(lambda, Model) %>%
     summarise(across(c(RMSE, MAE, NLL), mean), .groups = "drop")
@@ -216,7 +215,7 @@ pred_means = pred_means %>%
   pivot_longer(cols = c("RMSEP", "MAEP", "NLL"), names_to = "Metric", values_to = "Value") %>%
   pivot_wider(names_from = Model, values_from = Value) %>%
   arrange(lambda, match(Metric, c("RMSEP", "MAEP", "NLL"))) %>%
-  mutate(across(where(is.numeric), ~ sprintf("%.4f", .)))  
+  mutate(across(where(is.numeric), ~ sprintf("%.4f", .)))  # Format to 4 decimals
 
 pred = pred_means %>%
   group_by(lambda) %>%
@@ -230,9 +229,11 @@ for (lambda_name in names(results)) {
   lambda_t = as.numeric(sub("lambda=", "", lambda_name))
   true_vals = c(lambda = lambda_t)
   
+  # Extract simulations for this rho
   res = results[[lambda_name]]
   
-  coeffs = lapply(c(QML = "QML", GMM = "GMM", LSGB = "LSGB", GBGB = "GBGB", DSGB = "DSGB"), function(key) {
+  # For each method, bind rows and evaluate
+  coeffs = lapply(c(GBGB = "GBGB", DSGB = "DSGB"), function(key) {
     as.data.frame(do.call(rbind, lapply(res, function(res) {
       params(res, key, true_vals = true_vals)
     })))
@@ -270,24 +271,31 @@ perf = perf %>%
                                              sprintf("%.4f", .x))))
   )
 
+
 perf = perf %>%
   group_by(lambda) %>%
   mutate(lambda = ifelse(row_number() == 1, paste0("$", lambda, "$"), "")) %>%
   ungroup()
 
 
+
 ### Evaluate regularization
+# Define the correct influential variables in order
 inf_var = c(beta_t[2:3], gamma_t[which(gamma_t != 0)], beta_t[4])
 
+# Get DSGB coefficients for these variables for each rho
 regs_list = lapply(names(results), function(lambda_name) {
   res_list = results[[lambda_name]]
   
+  # Extract coefficients for DSGB
   reg = as.data.frame(do.call(rbind, lapply(res_list, function(res) {
     p = params(res, "DSGB", true_vals = inf_var)
+    # Ensure correct column order
     p = p[names(inf_var)]
     return(p)
   })))
   
+  # Replace NA with 0
   reg[is.na(reg)] = 0
   colnames(reg)[5] = "non-inf"
   reg
@@ -295,6 +303,7 @@ regs_list = lapply(names(results), function(lambda_name) {
 
 names(regs_list) = names(results)
 
+# Step 1: Long-format version of your regression data
 reg_combined = bind_rows(
   lapply(names(regs_list), function(name) {
     df = regs_list[[name]]
@@ -304,6 +313,7 @@ reg_combined = bind_rows(
   .id = NULL
 )
 
+# Convert to expression for LaTeX-style labels
 reg_combined$lambda = gsub("=", "==", reg_combined$lambda)
 
 reg_long = pivot_longer(
@@ -313,24 +323,30 @@ reg_long = pivot_longer(
   values_to = "Coefficient"
 )
 
+# Step 2: Make sure 'non-inf' is last
 reg_long$Variable = factor(reg_long$Variable, levels = c(setdiff(unique(reg_long$Variable), "non-inf"), "non-inf"))
 
+# Step 1: Extract numeric lambda value
 reg_long$lambda_num = as.numeric(sub("lambda==", "", as.character(reg_long$lambda)))
 
+# Step 2: Define desired order
 lambda_labels = paste0("lambda==", lambda_values)
 
+# Step 3: Re-factor with correct order
 reg_long$lambda = factor(
   reg_long$lambda,
   levels = lambda_labels,
   labels = lambda_labels
 )
 
+# Step 3: Convert inf_var to data frame in same long format
 names(inf_var)[5] = "non-inf"
 true.df = data.frame(
   Variable = names(inf_var),
   value = as.numeric(inf_var)
 )
 
+# Final plot with LaTeX facet titles
 ggplot(reg_long, aes(x = Variable, y = Coefficient)) +
   geom_boxplot(fill = "grey", color = "black") +
   geom_boxplot(data = true.df, aes(x = Variable, y = value), color = "red") +
@@ -343,28 +359,24 @@ ggplot(reg_long, aes(x = Variable, y = Coefficient)) +
 ### Print the results
 kable(reg_means,
       align = "lccc", 
-      caption = "Average selection rates in the low-dimensional linear setting"
+      caption = "Average selection rates in the high-dimensional linear setting"
 )
 
 kable(reg_stabs, 
       align = "lccc",
-      caption = "Average selection rates for deselection in the low-dimensional linear setting"
+      caption = "Average selection rates for deselection in the high-dimensional linear setting"
 )
 
 kable(
   perf,
   align = "lccccc",
-  caption = "Estimation performance for the spatial autoregressive parameter lambda in the low-dimensional linear setting"
+  caption = "Estimation performance for the spatial autoregressive parameter lambda in the high-dimensional linear setting"
 )
 
 
 kable(
   pred,
   align = "llccccc",
-  caption = "Prediction performance on independent test data for the low-dimensional linear setting"
+  caption = "Prediction performance on independent test data for the high-dimensional linear setting"
 )
-
-
-
-
 

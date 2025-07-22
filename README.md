@@ -22,14 +22,13 @@ For in-depth derivations and explanations of model-based gradient boosting for s
 require(Matrix)
 require(mboost)
 
-source("R/Helper.R")
 source("R/SEM.R")
 
-set.seed(2222)
+set.seed(12345678)
 
 # Simulate artificial data
-N = 400
-rho_t = 0
+n = 400
+lambda_t = 0
 beta_t = c(1, 3.5, -2.5, rep(0,8))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
 gamma_t = c(-4, 3, rep(0,8))
@@ -39,24 +38,24 @@ sigma_t = 1
 p = length(beta_t) + length(gamma_t) - 1
 p_true = sum(beta_t[-1] != 0) + sum(gamma_t != 0)
 
-# Generate adjacency matrices
-W = network(N, k = 5)
+# Generate spatial weight matrix
+W = network(n, k = 5)
 
 # Generate variables and error
-X = matrix(runif(N * (p / 2), -2, 2),  nrow = N, ncol = p / 2)
+X = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
 Z = cbind(X, W %*% X)
-Z = cbind(rep(1,N), Z)
+Z = cbind(rep(1,n), Z)
 Z = data.frame(Z)
 names(Z) = c(names(beta_t), names(gamma_t))
 
-eps = rnorm(N, mean = 0, sd = sigma_t)
+eps = rnorm(n, mean = 0, sd = sigma_t)
 
-u = solve(Diagonal(N) - rho_t * W, eps)
+u = solve(diag(n) - lambda_t * W, eps)
 
 Y = as.matrix(Z) %*% c(beta_t, gamma_t) + u
 
 # Model-based gradient boosting
-mod = gbm(Y, Z, W, M = 500, start = "ols", trace = TRUE)
+mod = semboost(Y, Z, W, M = 500, start = "ols", type = "kfold", stabilization = "MAD")
 
 coef(mod$model[200], off2int = TRUE)
 

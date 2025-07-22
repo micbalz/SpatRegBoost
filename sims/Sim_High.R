@@ -3,12 +3,11 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, knitr, Matrix, mboost, MASS, spdep, spatialreg, future, future.apply, progressr)
+pacman::p_load(tidyverse, sperrorest, knitr, mboost, gamboostLSS, MASS, spdep, spatialreg, future, future.apply, progressr)
 
-source("R/Helper.R")
 source("R/SEM.R")
 
-plan(multisession, workers = parallel::detectCores() - 2)  
+plan(multisession, workers = parallel::detectCores() - 1)  
 
 # At the beginning of your script
 handlers(global = TRUE)
@@ -17,48 +16,54 @@ handlers("cli")
 ### Simulation Setup
 nsim = 100
 
-N = 400
+n = 400
 beta_t = c(1, 3.5, -2.5, rep(0,398))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
 gamma_t = c(-4, 3, rep(0,398))
 names(gamma_t) = paste0("WX", 1:length(gamma_t))
 sigma_t = 1
 
+### Compute spatial weight matrix
+krs = st_read(dsn = "application/vg5000_ebenen_0101", layer = "VG5000_KRS")
+inkar = st_centroid(krs)
+knn = knearneigh(inkar, k = 10)
+nb = knn2nb(knn, row.names = krs$AGS)
+listw = nb2listw(nb, style = "W")
+W = listw2mat(listw)  
+
+
 # Run the simulation
-run = function (N, lambda_t, beta_t, gamma_t, sigma_t) {
+run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   p = length(beta_t) + length(gamma_t) - 1
   p_true = sum(beta_t[-1] != 0) + sum(gamma_t != 0)
   
-  ### Generate adjacency matrices
-  W = network(N, k = 5)
-  
   ### Generate covariates and error
-  X.train = matrix(runif(N * (p / 2), -2, 2),  nrow = N, ncol = p / 2)
+  X.train = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
   Z.train = cbind(X.train, W %*% X.train)
-  Z.train = cbind(rep(1,N), Z.train)
+  Z.train = cbind(rep(1,n), Z.train)
   Z.train = data.frame(Z.train)
   names(Z.train) = c(names(beta_t), names(gamma_t))
   
-  X.test = matrix(runif(N * (p / 2), -2, 2),  nrow = N, ncol = p / 2)
+  X.test = matrix(runif(n * (p / 2), -2, 2),  nrow = n, ncol = p / 2)
   Z.test = cbind(X.test, W %*% X.test)
-  Z.test = cbind(rep(1,N), Z.test)
+  Z.test = cbind(rep(1,n), Z.test)
   Z.test = data.frame(Z.test)
   names(Z.test) = c(names(beta_t), names(gamma_t))
   
-  eps.train = rnorm(N, mean = 0, sd = sigma_t)
-  eps.test = rnorm(N, mean = 0, sd = sigma_t)
+  eps.train = rnorm(n, mean = 0, sd = sigma_t)
+  eps.test = rnorm(n, mean = 0, sd = sigma_t)
   
-  u.train = solve(Diagonal(N) - lambda_t * W, eps.train)
-  u.test = solve(Diagonal(N) - lambda_t * W, eps.test)
+  u.train = solve(diag(n) - lambda_t * W, eps.train)
+  u.test = solve(diag(n) - lambda_t * W, eps.test)
   
   Y.train = as.matrix(Z.train) %*% c(beta_t, gamma_t) + u.train
   Y.test = as.matrix(Z.test) %*% c(beta_t, gamma_t) + u.test
   
   ### Run the models
-  mod = gbm(Y.train, Z.train, W, M = 500, start = "boost")
+  mod = semboost(Y.train, Z.train, W, M = 500, start = "boost", type = "k-means spatial clustering", stabilization = "none", map = krs)
   gbgb = mod$coef
   
-  est = gbm(Y.train, Z.train, W, M = 500, start = "des")
+  est = semboost(Y.train, Z.train, W, M = 500, start = "des", type = "k-means spatial clustering", stabilization = "none", map = krs)
   dsgb = est$coef
   
   ### Performance of variable selection
@@ -102,7 +107,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t) {
       Model = model_display_names[[name]],
       RMSE = rmse(Y.test, y_pred),
       MAE  = mae(Y.test, y_pred),
-      NLL  = nll(N, W, Y.test, as.matrix(Z_test), lambda = lambda, beta = delta, sigma = sigma2)
+      NLL  = nll(Y.test, as.matrix(Z_test), W, lambda = lambda, beta = delta, sigma = sigma2)
     )
   }, 
   names(Y.preds), Y.preds, deltas, lambdas, sigmas2, Z.tests,
@@ -113,7 +118,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t) {
   rownames(pred) = NULL
   
   ### Add deselection study
-  des = DeselectBoost(est$model, fam = SEM(omega = est$omega))
+  des = DeselectBoost(est$model, fam = SEM(omega = est$omega, stabilization = "none"))
   stabs = coef(des, off2int = TRUE)
   
   selectedVar = names(stabs)[!names(stabs) %in% c("lambda", "(Intercept)", "sigma")]
@@ -136,7 +141,7 @@ run = function (N, lambda_t, beta_t, gamma_t, sigma_t) {
 }
 
 sims = function(lambda_values, nsim) {
-  set.seed(222)
+  set.seed(12345678)
   
   result = list()
   
@@ -148,7 +153,7 @@ sims = function(lambda_values, nsim) {
     
     results_for_lambda = future_lapply(1:nsim, function(i) {
       
-      res = run(N, lambda, beta_t, gamma_t, sigma_t)
+      res = run(n, W, lambda, beta_t, gamma_t, sigma_t)
       pb(sprintf("lambda=%.2f, replication %d", lambda, i))
       res
     }, future.seed = TRUE)

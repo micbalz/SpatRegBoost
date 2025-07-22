@@ -3,11 +3,9 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, data.table, mapview, tmap, viridisLite, Matrix, mboost, MASS, spData, sf, spdep, sphet, spatialreg)
+pacman::p_load(tidyverse, sperrorest, data.table, mapview, tmap, viridisLite, Matrix, mboost, gamboostLSS, MASS, spData, sf, spdep, sphet, spatialreg, sperrorest)
 
-source("R/Helper.R")
 source("R/SEM.R")
-
 
 ### Load Data (INKAR version 2021 (inkar_2021.csv) is freely available at https://www.inkar.de/ (DL-DE BY 2.0))
 inkar = fread("application/inkar_2021.csv")
@@ -31,14 +29,12 @@ krs = krs %>% filter(!Name == "Eisenach, Stadt")
 krs = krs%>%
   mutate(Kennziffer = sprintf("%05d", Kennziffer))
 
-# Join your data
-inkar_spdf = merge(krs_spdf, krs, by.x = "AGS", by.y = "Kennziffer")
 
 # Build the map
-tm_shape(inkar_spdf) +
+tm_shape(merge(krs_spdf, krs, by.x = "AGS", by.y = "Kennziffer")) +
   tm_polygons("Lebenserwartung",
               palette = viridis(n = 100, direction = -1, option = "G"),
-              style = "jenks",
+              style = "kmeans",
               title = "Life Expectancy")
 
 ### Generate spatial weight matrix
@@ -146,13 +142,11 @@ colnames(Z)[1] = "(Intercept)"
 
 gmm = GMerrorsar(Y ~ ., data = Z[,-1], listw = listw)
 qml = errorsarlm(Y ~ ., data = X[,-1], listw = listw, Durbin = TRUE)
-
-
-set.seed(222)
-lsgb = gbm(Y, Z, W, M = 12000, start = "ols")
-gbgb = gbm(Y, Z, W, M = 5000, start = "boost")
-dsgb = gbm(Y, Z, W, M = 1000, start = "des")
-des = DeselectBoost(dsgb$model, fam = SEM(omega = dsgb$omega))
+set.seed(12345678)
+lsgb = semboost(Y, Z, W, M = 500, start = "ols", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
+gbgb = semboost(Y, Z, W, M = 500, start = "boost", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
+dsgb = semboost(Y, Z, W, M = 500, start = "des", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
+des = DeselectBoost(dsgb$model, fam = SEM(omega = dsgb$omega, stabilization = "MAD"))
 
 
 # Extract coefficients from all models
@@ -169,7 +163,6 @@ coefs_list = lapply(coefs_list, function(coefs) {
   names(coefs) = gsub("^lag\\.", "W_", names(coefs))
   coefs
 })
-
 
 # All variable names used across models
 all_vars = unique(unlist(lapply(coefs_list, names)))
@@ -189,11 +182,16 @@ for (model in names(coefs_list)) {
 coef_df = as.data.frame(coef_matrix)
 coef_df = tibble::rownames_to_column(coef_df, var = "Variable")
 
+# Custom variable ordering: lambda, non-W, W, sigma
+non_w_vars = sort(grep("^W_", coef_df$Variable, invert = TRUE, value = TRUE))
+non_w_vars = setdiff(non_w_vars, c("lambda", "sigma"))
+
+w_vars = sort(grep("^W_", coef_df$Variable, value = TRUE))
+
+ordered_vars = c("lambda", non_w_vars, w_vars, "sigma")
+
 coef_df = coef_df %>%
-  dplyr::arrange(match(Variable,
-                       c("lambda",
-                         setdiff(coef_df$Variable, c("lambda", "sigma")),
-                         "sigma")))
+  dplyr::arrange(match(Variable, ordered_vars))
 
 # Display the table nicely
 kable(coef_df, align = "lcccccc", caption = "Coefficient estimates across different estimation strategies for German district life expectancy")
