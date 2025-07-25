@@ -140,6 +140,11 @@ colnames(Z)[(ncol(X)):ncol(Z)] = paste0("W_", colnames(Z)[(ncol(X)):ncol(Z)])
 Z = data.frame("(Intercept)" = rep(1, length(Y)), Z)
 colnames(Z)[1] = "(Intercept)"
 
+
+### Rao's score (a.k.a Lagrange multiplier) diagnostics for spatial dependence
+summary(lm.RStests(lm(Y ~ ., data = Z[,-1]), listw = listw, test = "all"))
+
+### Fit the models
 gmm = GMerrorsar(Y ~ ., data = Z[,-1], listw = listw)
 qml = errorsarlm(Y ~ ., data = X[,-1], listw = listw, Durbin = TRUE)
 set.seed(12345678)
