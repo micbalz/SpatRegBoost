@@ -55,7 +55,7 @@ u = solve(diag(n) - lambda_t * W, eps)
 Y = as.matrix(Z) %*% c(beta_t, gamma_t) + u
 
 # Model-based gradient boosting
-mod = semboost(Y, Z, W, M = 500, start = "ols", type = "kfold", stabilization = "MAD")
+mod = semboost(Y, Z, W, M = 500, start = "ols", type = "kfold", stabilization = "none", trace = TRUE)
 
 coef(mod$model[200], off2int = TRUE)
 
