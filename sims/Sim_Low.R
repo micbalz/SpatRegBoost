@@ -145,7 +145,6 @@ run = function (n, W, lambda_t, beta_t, gamma_t, sigma_t) {
   
 }
 
-#12345678
 
 sims = function(lambda_values, nsim) {
   set.seed(12345678)
@@ -331,12 +330,25 @@ true.df = data.frame(
   value = as.numeric(inf_var)
 )
 
-ggplot(reg_long, aes(x = Variable, y = Coefficient)) +
-  geom_boxplot(fill = "grey", color = "black") +
-  geom_boxplot(data = true.df, aes(x = Variable, y = value), color = "red") +
-  ylab("Coefficients") +
-  xlab("") +
-  facet_wrap(~ lambda, labeller = label_parsed, ncol = 4, nrow = 4) +
+# ggplot(reg_long, aes(x = Variable, y = Coefficient)) +
+#   geom_boxplot(fill = "grey", color = "black") +
+#   geom_boxplot(data = true.df, aes(x = Variable, y = value), color = "red") +
+#   ylab("Coefficients") +
+#   xlab("") +
+#   facet_wrap(~ lambda, labeller = label_parsed, ncol = 4, nrow = 4) +
+#   theme_bw(base_size = 15)
+
+# Set the factor levels in the desired order
+reg_long$Variable = factor(reg_long$Variable, levels = c("X1", "X2", "WX1", "WX2", "non-inf"))
+true.df$Variable = factor(true.df$Variable, levels = c("X1", "X2", "WX1", "WX2", "non-inf"))
+reg_long$lambda_num = factor(reg_long$lambda_num, levels = lambda_values)
+
+ggplot(reg_long, aes(x = lambda_num, y = Coefficient)) +
+  geom_boxplot(fill = "grey", color = "black", outliers = FALSE) +
+  geom_hline(data = true.df, aes(yintercept = value), color = "red", linetype = "dashed", linewidth = 1) +
+  xlab(expression(lambda)) +
+  ylab("Coefficient") +
+  facet_wrap(~ Variable, nrow = 3, ncol = 2, scales = "free_y") +
   theme_bw(base_size = 15)
 
 
