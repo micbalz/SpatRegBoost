@@ -359,7 +359,7 @@ true.df$Variable = factor(true.df$Variable, levels = c("X1", "X2", "WX1", "WX2",
 reg_long$lambda_num = factor(reg_long$lambda_num, levels = K)
 
 ggplot(reg_long, aes(x = lambda_num, y = Coefficient)) +
-  geom_boxplot(fill = "grey", color = "black", outliers = FALSE) +
+  geom_boxplot(fill = "grey", color = "black", outliers = TRUE) +
   geom_hline(data = true.df, aes(yintercept = value), color = "red", linetype = "dashed", linewidth = 1) +
   xlab("k") +
   ylab("Coefficient") +
