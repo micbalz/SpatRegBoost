@@ -18,9 +18,9 @@ nsim = 100
 
 n = 400
 lambda_t = 0
-beta_t = c(1, 3.5, -2.5, rep(0,8))
+beta_t = c(1, 3.5, -2.5, rep(0,398))
 names(beta_t) = c("(Intercept)", paste0("X", 1:(length(beta_t)-1)))
-gamma_t = c(-4, 3, rep(0,8))
+gamma_t = c(-4, 3, rep(0,398))
 names(gamma_t) = paste0("WX", 1:length(gamma_t))
 sigma_t = 1
 
@@ -158,7 +158,7 @@ sims = function(K, nsim) {
   return(result)
 }
 
-# Run for multiple lambdas
+# Run for multiple k
 K = c(1, 2, 3, 5, 10, 20)
 results = sims(K, nsim)
 

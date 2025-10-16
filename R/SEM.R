@@ -276,7 +276,7 @@ semboost = function(Y, Z, W, M,
   scorr = c(crossprod(W %*% u_t, u_t) / crossprod(u_t, u_t))
   scorr = scorr / (sum(W) / length(u_t))
   
-  pars = c(scorr, var(scale(u_t)))
+  pars = c(scorr, var(u_t))
   
   opt = nlminb(start = pars, objective = obj)
   lambda = opt$par[1]

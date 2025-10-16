@@ -3,7 +3,7 @@ rm(list = ls())
 gc()
 options(scipen = 900)
 
-pacman::p_load(tidyverse, sperrorest, data.table, mapview, tmap, viridisLite, Matrix, mboost, gamboostLSS, MASS, spData, sf, spdep, sphet, spatialreg, sperrorest)
+pacman::p_load(tidyverse, sperrorest, knitr, data.table, mapview, tmap, viridisLite, Matrix, mboost, gamboostLSS, MASS, spData, sf, spdep, sphet, spatialreg, sperrorest)
 
 source("R/SEM.R")
 
