@@ -30,13 +30,6 @@ krs = krs%>%
   mutate(Kennziffer = sprintf("%05d", Kennziffer))
 
 
-# Build the map
-tm_shape(merge(krs_spdf, krs, by.x = "AGS", by.y = "Kennziffer")) +
-  tm_polygons("Lebenserwartung",
-              palette = viridis(n = 100, direction = -1, option = "G"),
-              style = "kmeans",
-              title = "Life Expectancy")
-
 ### Generate spatial weight matrix
 knn = knearneigh(st_centroid(krs_spdf), k = 10)
 nb = knn2nb(knn, row.names = krs_spdf$AGS)
@@ -148,9 +141,9 @@ summary(lm.RStests(lm(Y ~ ., data = Z[,-1]), listw = listw, test = "all"))
 gmm = GMerrorsar(Y ~ ., data = Z[,-1], listw = listw)
 qml = errorsarlm(Y ~ ., data = X[,-1], listw = listw, Durbin = TRUE)
 set.seed(12345678)
-lsgb = semboost(Y, Z, W, M = 500, start = "ols", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
-gbgb = semboost(Y, Z, W, M = 500, start = "boost", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
-dsgb = semboost(Y, Z, W, M = 500, start = "des", type = "k-means spatial clustering", stabilization = "MAD", map = krs_spdf)
+lsgb = semboost(Y, Z, W, M = 500, start = "ols", type = "k-means spatial clustering", stabilization = "MAD", scale = FALSE, map = krs_spdf)
+gbgb = semboost(Y, Z, W, M = 500, start = "boost", type = "k-means spatial clustering", stabilization = "MAD", scale = FALSE, map = krs_spdf)
+dsgb = semboost(Y, Z, W, M = 500, start = "des", type = "k-means spatial clustering", stabilization = "MAD", scale = FALSE, map = krs_spdf)
 des = DeselectBoost(dsgb$model, fam = SEM(omega = dsgb$omega, stabilization = "MAD"))
 
 
@@ -197,6 +190,13 @@ ordered_vars = c("lambda", non_w_vars, w_vars, "sigma")
 
 coef_df = coef_df %>%
   dplyr::arrange(match(Variable, ordered_vars))
+
+# Build the map
+tm_shape(merge(krs_spdf, krs, by.x = "AGS", by.y = "Kennziffer")) +
+  tm_polygons("Lebenserwartung",
+              palette = viridis(n = 100, direction = -1, option = "G"),
+              style = "kmeans",
+              title = "Life expectancy")
 
 # Display the table nicely
 kable(coef_df, align = "lcccccc", caption = "Coefficient estimates across different estimation strategies for German district life expectancy")

@@ -211,6 +211,7 @@ semboost = function(Y, Z, W, M,
                     start = c("ols", "boost", "des"),
                     type = c("subsampling", "kfold", "bootstrap", "k-means spatial clustering"),
                     stabilization = c("none", "MAD", "L2"),
+                    scale = TRUE,
                     trace = FALSE,
                     map = NULL,
                     B = 10) {
@@ -275,6 +276,8 @@ semboost = function(Y, Z, W, M,
   
   scorr = c(crossprod(W %*% u_t, u_t) / crossprod(u_t, u_t))
   scorr = scorr / (sum(W) / length(u_t))
+  
+  if(scale == TRUE) {u_t = scale(u_t)}
   
   pars = c(scorr, var(u_t))
   

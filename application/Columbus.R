@@ -10,13 +10,6 @@ source("R/SEM.R")
 # Load the Columbus shapefile (sf object)
 map = st_read(system.file("shapes/columbus.gpkg", package="spData")[1])
 
-# Build the map using CRIME variable
-tm_shape(map) +
-  tm_polygons("CRIME", 
-              palette = viridis(n = 100, direction = -1, option = "G"),
-              style = "quantile", 
-              title = "Crime Rate") 
-
 # Create spatial weight matrix
 nb = poly2nb(map, queen = TRUE)
 nbw = spdep::nb2listw(nb, style = "W")
@@ -84,6 +77,13 @@ ordered_vars = c("lambda", non_w_vars, w_vars, "sigma")
 
 coef_df = coef_df %>%
   dplyr::arrange(match(Variable, ordered_vars))
+
+# Build the map using CRIME variable
+tm_shape(map) +
+  tm_polygons("CRIME", 
+              palette = viridis(n = 100, direction = -1, option = "G"),
+              style = "quantile", 
+              title = "Crime rate") 
 
 # Display the table nicely
 kable(coef_df, align = "lcccccc", caption = "Coefficient estimates across different estimation strategies for Columbus crime rate")

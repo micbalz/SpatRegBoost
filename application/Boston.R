@@ -10,16 +10,9 @@ source("R/SEM.R")
 # Load data
 data("boston", package = "spData")
 
-# Build the map
 boston.tr = sf::st_read(system.file("shapes/boston_tracts.gpkg",
                                     package="spData")[1])
 boston_map = left_join(boston.tr, boston.c, by = c("TOWNNO", "TRACT"))
-
-tm_shape(boston_map) +
-  tm_polygons("CMEDV.x",
-              palette = viridis(n = 100, direction = -1, option = "G"),
-              style = "quantile",
-              title = "Housing Prices")
 
 
 # Create spatial weights matrix and design matrix 
@@ -83,6 +76,13 @@ ordered_vars = c("lambda", non_w_vars, w_vars, "sigma")
 
 coef_df = coef_df %>%
   dplyr::arrange(match(Variable, ordered_vars))
+
+# Build the map
+tm_shape(boston_map) +
+  tm_polygons("CMEDV.x",
+              palette = viridis(n = 100, direction = -1, option = "G"),
+              style = "quantile",
+              title = "Housing prices")
 
 # Display the table nicely
 kable(coef_df, align = "lcccccc", caption = "Coefficient estimates across different estimation strategies for Boston housing prices")

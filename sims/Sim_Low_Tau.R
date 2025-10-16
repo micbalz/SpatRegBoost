@@ -198,7 +198,7 @@ df_long = df %>%
 ggplot(df_long, aes(x = tau, y = value)) +
   geom_boxplot(outlier.shape = NA) +
   facet_wrap(~ stat, scales = "free", nrow = 1,
-             labeller = as_labeller(c(TPR = "TPR", TNR = "TNR", RMSE = "RMSE"))) +
+             labeller = as_labeller(c(TPR = "TPR", TNR = "TNR", RMSE = "RMSEP"))) +
   labs(
     x = expression(tau),   
     y = NULL
