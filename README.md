@@ -13,9 +13,9 @@ The repository serves as a foundation for replication.
 
 For in-depth derivations and explanations of model-based gradient boosting for spatial regression models with autoregressive disturbances, refer to: 
 
-**Balzer M. (2025).**  
-*Gradient Boosting for Spatial Regression Models with Autoregressive Disturbances*  
-[arXiv:2506.13682](https://arxiv.org/abs/2506.13682)  
+Balzer, M. (2025).
+Gradient boosting for spatial regression models with autoregressive disturbances. Networks and Spatial
+Economics. https://doi.org/10.1007/s11067-025-09717-8 
 
 ## Example 
 ```
